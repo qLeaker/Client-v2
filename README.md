@@ -1,4 +1,4 @@
 # Client-v2
-cross build --release --target x86_64-pc-windows-gnu
+cargo rustc --release --target=x86_64-pc-windows-gnu --verbose -- -Clink-args="-Wl,--subsystem,windows"
 
 cargo build --release
