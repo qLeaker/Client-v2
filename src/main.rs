@@ -7,28 +7,23 @@ mod hex_utils;
 use std::clone::Clone;
 use std::collections::HashMap;
 use std::fs::File;
-use std::io::{BufReader, Read, Write};
+use std::io::{Write};
 use std::thread;
-use std::thread::sleep;
-use std::time::Duration;
-use easy_hex::{HexExt};
 use crate::structurs::{GarrysModAddon, QleakerApp};
 use eframe::{egui};
-use eframe::egui::{Context, TextBuffer};
-use image::{ImageDecoder};
+use eframe::egui::{Context, Ui};
 use once_cell::sync::Lazy;
 use serde_json::Value;
 
 use crate::garrys_mod_database::GarrysModDatabase;
 use crate::hex_utils::{load_image_from_memory, string_to_hex};
-use crate::req::{into_string, request_get, request_get_image};
+use crate::req::{request_get, request_get_image};
 
 const GMOD_PREFIX: &str = "[Garry's mod]";
-const REQUEST_PREFIX: &str = "[Garry's mod]";
 
 fn main() -> Result<(), eframe::Error> {
     let options = eframe::NativeOptions {
-        initial_window_size: Some(egui::vec2(278.0, 460.0)),
+        initial_window_size: Some(egui::vec2(1052.0, 505.0)),
         resizable: false,
         ..Default::default()
     };
@@ -45,8 +40,8 @@ fn main() -> Result<(), eframe::Error> {
 }
 static mut EMGUI_CONTEXT: Option<Context> = None;
 
-static mut ALL_BOOKS_BY_SHORT_NAME: Lazy<HashMap<String, egui::TextureHandle>> = Lazy::new(|| {
-    let mut map = HashMap::<String, egui::TextureHandle>::new();
+static mut ALL_TEXTURES: Lazy<HashMap<String, egui::TextureHandle>> = Lazy::new(|| {
+    let map = HashMap::<String, egui::TextureHandle>::new();
     map
 });
 
@@ -63,15 +58,12 @@ impl Default for QleakerApp {
             search: "".to_string(),
             texture: vec![],
         };
-        for i in 0..10000 {
+        for _i in 0..10000 {
             database1.texture.push(None);
         }
-        let mut database3 = database1.clone();
+        let database3 = database1.clone();
 
         let _thread = thread::spawn(move || unsafe {
-
-            // let mut database2 = rx1.recv().unwrap();
-
 
             let mut i = 0;
             let database = GarrysModDatabase::new();
@@ -85,10 +77,9 @@ impl Default for QleakerApp {
                 let _thread = thread::spawn(move || unsafe {
 
                     i = i + 1;
-                    sleep(Duration::from_millis(25));
-                    let mut image_dst = request_get_image(addon_copy.image);
+                    let image_dst = request_get_image(addon_copy.image);
                     match image_dst {
-                        None => {}
+                        None => { return; }
                         Some(dist) => {
                             let name = addon_copy2.name.clone();
                             let image = load_image_from_memory(dist.as_slice());
@@ -102,7 +93,7 @@ impl Default for QleakerApp {
                                             });
                                             let bb = texture.clone();
                                             let nn = name.trim().to_string();
-                                            ALL_BOOKS_BY_SHORT_NAME.insert(nn, bb);
+                                            ALL_TEXTURES.insert(nn, bb);
                                         }
                                     }
                                 }
@@ -119,8 +110,94 @@ impl Default for QleakerApp {
         return database1
     }
 }
+unsafe fn add_gmod(addon: &GarrysModAddon, mut ui: &mut Ui) {
+    let texture_handle = ALL_TEXTURES.get(addon.name.trim());
+    match texture_handle {
+        None => { }
+        Some(texture) => {
+            ui.image(texture, (250.0, 75.0));
+            ui.set_width(250.0);
+            ui.label(addon.name.as_str());
+            ui.set_width(250.0);
+            ui.label(format!("Version: {}", addon.version.as_str()));
+            ui.horizontal(|ui| {
+                if ui.button("Download").clicked() {
+
+                    match request_get(&*urlencoding::decode(addon.file.as_str()).unwrap()) {
+                        None => { return; }
+                        Some(body) => {
+                            match serde_json::from_str::<Value>(body.as_str()) {
+                                Ok(p) => {
+                                    let hexstr = p["file"].as_str();
+
+
+                                    match hexstr {
+                                        None => {
+                                            println!("File not found")
+                                        }
+                                        Some(d) => {
+                                            let dst = string_to_hex(d.to_string());
+
+                                            match File::create(format!("{}.zip", addon.name)) {
+                                                Ok(mut a) => {
+                                                    match a.write_all(dst.as_slice()) {
+                                                        Ok(_) => {
+                                                            println!("File downloaded")
+                                                        }
+                                                        Err(_) => {
+                                                            println!("File write error")
+                                                        }
+                                                    }
+                                                }
+                                                Err(_) => {
+                                                    println!("error #2")
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                                Err(e) => {
+                                    println!("Ошибка конвертаций в Json: {}", e)
+                                }
+                            }
+                        }
+                    }
+                }
+                if !addon.content.is_empty() {
+                    if ui.button("Content").clicked() {
+                        let trimed = addon.content.trim();
+                        if trimed.contains(" ") {
+                            let splited = trimed.split(" ");
+                            for content_url in splited {
+                                match open::that(content_url) {
+                                    Ok(()) => {},
+                                    Err(_err) => {},
+                                }
+                            }
+                        }
+                        else {
+                            match open::that(trimed) {
+                                Ok(()) => {},
+                                Err(_err) => {},
+                            }
+                        }
+                    }
+                }
+                if !addon.store.is_empty() {
+                    if ui.button("GmodStore").clicked() {
+                        match open::that(addon.store.as_str()) {
+                            Ok(()) => {},
+                            Err(_err) => {},
+                        }
+                    }
+                }
+            });
+        }
+    }
+}
 
 impl eframe::App for QleakerApp {
+
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
         egui::CentralPanel::default().show(ctx, |ui| unsafe {
 
@@ -132,87 +209,23 @@ impl eframe::App for QleakerApp {
             });
             ui.separator();
 
-            let mut row = 4;
-            let mut cel = 0;
-
             egui::ScrollArea::new([true, true]).show(ui, |ui| {
-                ui.vertical(|ui| {
-                    let mut list = OBJ.list.clone();
-                    let the_vocabulary: Vec<GarrysModAddon> = list
-                        .drain(..)
-                        .filter(|voc| voc.name.to_lowercase().contains(OBJ.search.to_lowercase().as_str()))
-                        .collect();
-                    for addon in the_vocabulary {
-                        ui.vertical(|ui| {
-                            let a = ALL_BOOKS_BY_SHORT_NAME.get(addon.name.trim());
-                            match a {
-                                None => { }
-                                Some(a) => {
-                                    ui.image(a, (250.0, 75.));
-                                    ui.set_width(250.0);
-                                    ui.label(addon.name.as_str());
-                                }
-                            }
-                        });
-                        ui.vertical(|ui| {
-                            ui.horizontal(|ui| {
-                                if ui.button("Download").clicked() {
-                                    println!("Скачиваю: {}", urlencoding::decode(addon.file.as_str()).unwrap());
-                                    match request_get(&*urlencoding::decode(addon.file.as_str()).unwrap()) {
-                                        None => { todo!() }
-                                        Some(body) => {
-                                            match serde_json::from_str::<Value>(body.as_str()) {
-                                                Ok(p) => {
-                                                    let hexstr = p["file"].as_str();
-
-
-                                                    match hexstr {
-                                                        None => {
-                                                            println!("File not found")
-                                                        }
-                                                        Some(d) => {
-                                                            let dst = string_to_hex(d.to_string());
-
-                                                            match File::create(format!("{}.zip", addon.name)) {
-                                                                Ok(mut a) => {
-                                                                    match a.write_all(dst.as_slice()) {
-                                                                        Ok(_) => {
-                                                                            println!("File downloaded")
-                                                                        }
-                                                                        Err(_) => {
-                                                                            println!("File write error")
-                                                                        }
-                                                                    }
-                                                                }
-                                                                Err(_) => {
-                                                                    println!("error #2")
-                                                                }
-                                                            }
-                                                        }
-                                                    }
-                                                }
-                                                _ => {}
-                                            }
-                                        }
-                                    }
-                                }
-                                if ui.button("Content").clicked() {
-                                    match open::that(addon.content.as_str()) {
-                                        Ok(()) => {},
-                                        Err(_err) => {},
-                                    }
-                                }
-                                if ui.button("GmodStore").clicked() {
-                                    match open::that(addon.store.as_str()) {
-                                        Ok(()) => {},
-                                        Err(_err) => {},
-                                    }
-                                }
+                let mut list = OBJ.list.clone();
+                let filtered_list: Vec<GarrysModAddon> = list
+                    .drain(..)
+                    .filter(|addon| addon.name.to_lowercase().contains(OBJ.search.to_lowercase().as_str()))
+                    .collect();
+                let chinks = filtered_list.chunks(4);
+                for addon in chinks {
+                    ui.horizontal(|ui| {
+                        for addonun in addon {
+                            ui.vertical(|ui| {
+                                add_gmod(addonun, ui);
+                                ui.separator();
                             });
-                        });
-                        ui.separator();
-                    }
-                });
+                        }
+                    });
+                }
             });
         });
     }

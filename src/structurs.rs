@@ -8,10 +8,6 @@ pub struct QleakerApp {
     pub(crate) search: String,
     pub(crate) texture: Vec<Option<egui::TextureHandle>>,
 }
-
-pub enum Msg {
-    Refresh,
-}
 #[derive(Serialize, Deserialize, Clone)]
 pub struct GarrysModAddonList {
     pub(crate) lists: Vec<String>,

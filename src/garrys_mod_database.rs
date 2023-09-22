@@ -11,14 +11,12 @@ use crate::req::request_get;
 const GMOD_LIST_URL: &str = "https://github.com/qLeaker/Cloud/raw/main/gmod/list.json";
 
 pub struct GarrysModDatabase {
-    pub(crate) addons: Vec<GarrysModAddon>,
     pub(crate) rx: Receiver<GarrysModAddon>
 }
 impl GarrysModDatabase{
     pub(crate) fn new() -> GarrysModDatabase {
         let (tx, rx1) = channel();
         let database = Self {
-            addons: vec![],
             rx: rx1
         };
         let data = Arc::new(Mutex::new(0));
