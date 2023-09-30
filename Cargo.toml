@@ -2,8 +2,16 @@
 name = "qLeaker"
 version = "0.1.0"
 edition = "2021"
+build = "build.rs"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[build-dependencies]
+winres = "0.1"
+
+[package.metadata.winres]
+OriginalFilename = "qLeaker.exe"
+LegalCopyright = "Copyright Tehnology Utils © 2016"
 
 [dependencies]
 eframe = "0.22.0"
@@ -21,6 +29,3 @@ image = { version = "0.24", default-features = false, features = [
     "jpeg",
     "png",
 ] }
-
-[target.x86_64-pc-windows-msvc]
-rustflags = ["-C", "target-feature=+crt-static"]

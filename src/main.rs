@@ -1,3 +1,5 @@
+#![windows_subsystem = "windows"]
+
 mod garrys_mod_database;
 mod req;
 mod structurs;
@@ -8,10 +10,12 @@ use std::clone::Clone;
 use std::collections::HashMap;
 use std::fs::File;
 use std::io::{Write};
+use std::sync::Arc;
 use std::thread;
+use std::thread::{JoinHandle};
 use crate::structurs::{GarrysModAddon, QleakerApp};
 use eframe::{egui};
-use eframe::egui::{Context, Ui};
+use eframe::egui::{Context, Rect, Ui};
 use once_cell::sync::Lazy;
 use serde_json::Value;
 
@@ -21,10 +25,27 @@ use crate::req::{request_get, request_get_image};
 
 const GMOD_PREFIX: &str = "[Garry's mod]";
 
+fn load_icon() -> eframe::IconData {
+    let (icon_rgba, icon_width, icon_height) = {
+        let image_dst = request_get_image(String::from("https://github.com/qLeaker/Client-v2/releases/download/icon/package.png")).unwrap();
+        let image = image::load_from_memory(image_dst.as_slice()).unwrap().into_rgba8();
+        let (width, height) = image.dimensions();
+        let rgba = image.into_raw();
+        (rgba, width, height)
+    };
+
+    eframe::IconData {
+        rgba: icon_rgba,
+        width: icon_width,
+        height: icon_height,
+    }
+}
+
 fn main() -> Result<(), eframe::Error> {
     let options = eframe::NativeOptions {
         initial_window_size: Some(egui::vec2(1052.0, 505.0)),
-        resizable: false,
+        // resizable: false,
+        icon_data: Some(load_icon()),
         ..Default::default()
     };
     let result = eframe::run_native(
@@ -51,6 +72,11 @@ static mut OBJ: QleakerApp = QleakerApp {
     texture: vec![],
 };
 
+static mut LOADED_ADDONS: Lazy<Arc<bool>> = Lazy::new(|| {
+    Arc::new(false)
+});
+
+
 impl Default for QleakerApp {
     fn default() -> Self {
         let mut database1 = Self {
@@ -64,22 +90,22 @@ impl Default for QleakerApp {
         let database3 = database1.clone();
 
         let _thread = thread::spawn(move || unsafe {
-
             let mut i = 0;
+
+            let mut threads: std::vec::Vec<JoinHandle<bool>>= vec![];
+
             let database = GarrysModDatabase::new();
             for addon in database.rx {
                 let addon_copy = addon.clone();
                 let addon_copy2 = addon.clone();
-
-                let mut database4 = database3.clone();
                 OBJ.list.push(addon);
-
-                let _thread = thread::spawn(move || unsafe {
+                let mut database4 = database3.clone();
+                let _thread = thread::spawn(move || {
 
                     i = i + 1;
                     let image_dst = request_get_image(addon_copy.image);
                     match image_dst {
-                        None => { return; }
+                        None => { return false; }
                         Some(dist) => {
                             let name = addon_copy2.name.clone();
                             let image = load_image_from_memory(dist.as_slice());
@@ -93,24 +119,34 @@ impl Default for QleakerApp {
                                             });
                                             let bb = texture.clone();
                                             let nn = name.trim().to_string();
+    
                                             ALL_TEXTURES.insert(nn, bb);
+                                            return true;
                                         }
                                     }
                                 }
                                 Err(e) => {
-                                    println!("Ошибка картинки {}", e)
+                                    println!("Ошибка картинки {}", e);
+                                    return false;
                                 }
                             }
                         }
                     }
+                    return false;
                 });
+                threads.push(_thread);
             }
+
+            for threadh in threads {
+                let _j = threadh.join();
+            }
+            *LOADED_ADDONS = true.into();
         });
 
         return database1
     }
 }
-unsafe fn add_gmod(addon: &GarrysModAddon, mut ui: &mut Ui) {
+unsafe fn add_gmod(addon: &GarrysModAddon, ui: &mut Ui, _rect: Rect) {
     let texture_handle = ALL_TEXTURES.get(addon.name.trim());
     match texture_handle {
         None => { }
@@ -208,25 +244,27 @@ impl eframe::App for QleakerApp {
                 ui.text_edit_singleline(&mut OBJ.search);
             });
             ui.separator();
-
-            egui::ScrollArea::new([true, true]).show(ui, |ui| {
-                let mut list = OBJ.list.clone();
-                let filtered_list: Vec<GarrysModAddon> = list
-                    .drain(..)
-                    .filter(|addon| addon.name.to_lowercase().contains(OBJ.search.to_lowercase().as_str()))
-                    .collect();
-                let chinks = filtered_list.chunks(4);
-                for addon in chinks {
-                    ui.horizontal(|ui| {
-                        for addonun in addon {
-                            ui.vertical(|ui| {
-                                add_gmod(addonun, ui);
-                                ui.separator();
-                            });
-                        }
-                    });
-                }
-            });
+            let rect = ui.min_rect();
+            if **LOADED_ADDONS {
+                egui::ScrollArea::new([true, true]).show(ui, |ui| {
+                    let mut list = OBJ.list.clone();
+                    let filtered_list: Vec<GarrysModAddon> = list
+                        .drain(..)
+                        .filter(|addon| addon.name.to_lowercase().contains(OBJ.search.to_lowercase().as_str()))
+                        .collect();
+                    let chinks = filtered_list.chunks((rect.width() / 259.0) as usize);
+                    for addon in chinks {
+                        ui.horizontal(|ui| {
+                            for addonun in addon {
+                                ui.vertical(|ui| {
+                                    add_gmod(addonun, ui, rect);
+                                    ui.separator();
+                                });
+                            }
+                        });
+                    }
+                });
+            }
         });
     }
 }
